@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Semantic Fashion Search</title>
+<style>
+  :root {
+    --ink: #1c1d21;
+    --dim: #6b6f76;
+    --line: #e4e2dd;
+    --bg: #faf9f6;
+    --surface: #ffffff;
+    --accent: #5546d6;
+    --accent-soft: #eeecfb;
+    --warn: #b45309;
+    --warn-soft: #fbeedd;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  header {
+    padding: 2.2rem 1.5rem 1.4rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+  header .inner { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: 0 0 .3rem; }
+  header p { color: var(--dim); margin: 0; font-size: .92rem; }
+
+  form {
+    max-width: 780px;
+    margin: 1.5rem auto 0;
+    padding: 0 1.5rem;
+    display: flex;
+    gap: .6rem;
+  }
+  input[type="text"] {
+    flex: 1;
+    padding: .8rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    font-size: .95rem;
+    background: var(--surface);
+  }
+  input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button {
+    padding: .8rem 1.4rem;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: .95rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .6; cursor: default; }
+
+  .examples {
+    max-width: 780px;
+    margin: .6rem auto 0;
+    padding: 0 1.5rem;
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+  }
+  .examples button {
+    background: var(--surface);
+    color: var(--dim);
+    border: 1px solid var(--line);
+    font-weight: 400;
+    font-size: .82rem;
+    padding: .4rem .7rem;
+  }
+
+  main { max-width: 780px; margin: 1.6rem auto 4rem; padding: 0 1.5rem; }
+
+  .status { color: var(--dim); font-size: .9rem; margin-bottom: 1rem; }
+
+  .badge {
+    display: inline-block;
+    font-size: .75rem;
+    font-weight: 600;
+    padding: .25rem .6rem;
+    border-radius: 5px;
+    margin-bottom: 1rem;
+  }
+  .badge.degraded { background: var(--warn-soft); color: var(--warn); }
+  .badge.llm { background: var(--accent-soft); color: var(--accent); }
+
+  .intent {
+    font-size: .85rem;
+    color: var(--dim);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: .7rem .9rem;
+    margin-bottom: 1.2rem;
+  }
+  .intent b { color: var(--ink); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+    margin-bottom: .9rem;
+  }
+  .card .title { font-weight: 600; margin: 0 0 .3rem; }
+  .card .meta { color: var(--dim); font-size: .85rem; margin-bottom: .5rem; }
+  .card .rationale { font-size: .9rem; }
+  .card .score {
+    float: right;
+    font-family: monospace;
+    font-size: .78rem;
+    color: var(--dim);
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="inner">
+      <h1>Semantic Fashion Search</h1>
+      <p>Ask in plain language instead of keywords -- backed by the recommendation-service API.</p>
+    </div>
+  </header>
+
+  <form id="search-form">
+    <input id="query" type="text" placeholder="I need an outfit to go to the beach this summer" autocomplete="off" />
+    <button type="submit" id="submit-btn">Search</button>
+  </form>
+  <div class="examples">
+    <button type="button" data-q="I need an outfit to go to the beach this summer">beach outfit</button>
+    <button type="button" data-q="warm winter jacket for hiking">winter jacket</button>
+    <button type="button" data-q="something comfortable for a summer wedding">summer wedding</button>
+  </div>
+
+  <main>
+    <div id="status" class="status">Type a query and hit Search.</div>
+    <div id="results"></div>
+  </main>
+
+  <script>
+    const API_URL = "http://localhost:8080/api/v1/recommendations";
+    const form = document.getElementById("search-form");
+    const input = document.getElementById("query");
+    const statusEl = document.getElementById("status");
+    const resultsEl = document.getElementById("results");
+    const submitBtn = document.getElementById("submit-btn");
+
+    document.querySelectorAll(".examples button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        input.value = btn.dataset.q;
+        form.dispatchEvent(new Event("submit"));
+      });
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const query = input.value.trim();
+      if (!query) return;
+
+      submitBtn.disabled = true;
+      statusEl.textContent = "Searching...";
+      resultsEl.innerHTML = "";
+
+      try {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, topK: 8 }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          statusEl.textContent = `Error ${res.status}: ${err.message || res.statusText}`;
+          submitBtn.disabled = false;
+          return;
+        }
+
+        const data = await res.json();
+        render(data);
+      } catch (err) {
+        statusEl.textContent = `Request failed: ${err.message}. Is the service running on :8080?`;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    function render(data) {
+      statusEl.textContent = `${data.results.length} result${data.results.length === 1 ? "" : "s"}`;
+
+      const badge = data.degraded
+        ? `<span class="badge degraded">Vector-similarity mode (no LLM rationale)</span>`
+        : `<span class="badge llm">LLM-ranked with rationale</span>`;
+
+      const intent = data.parsedIntent
+        ? `<div class="intent">
+             <div><b>Rewritten query:</b> ${escapeHtml(data.parsedIntent.rewrittenQuery || "-")}</div>
+             ${data.parsedIntent.category ? `<div><b>Category:</b> ${escapeHtml(data.parsedIntent.category)}</div>` : ""}
+             ${data.parsedIntent.occasion ? `<div><b>Occasion:</b> ${escapeHtml(data.parsedIntent.occasion)}</div>` : ""}
+             ${data.parsedIntent.season ? `<div><b>Season:</b> ${escapeHtml(data.parsedIntent.season)}</div>` : ""}
+           </div>`
+        : "";
+
+      const cards = data.results
+        .map(
+          (r) => `
+        <div class="card">
+          <span class="score">${r.score.toFixed(3)}</span>
+          <p class="title">${escapeHtml(r.title)}</p>
+          <p class="meta">${r.store ? escapeHtml(r.store) + " &middot; " : ""}${r.price != null ? "$" + r.price.toFixed(2) : "price n/a"}${r.averageRating != null ? " &middot; ★ " + r.averageRating : ""}</p>
+          <p class="rationale">${escapeHtml(r.rationale)}</p>
+        </div>`
+        )
+        .join("");
+
+      resultsEl.innerHTML = badge + intent + cards;
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str ?? "";
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

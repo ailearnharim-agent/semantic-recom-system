@@ -1,0 +1,32 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: recommendation-service
+  datasource:
+    url: jdbc:postgresql://localhost:5433/reco
+    username: reco
+    password: reco
+  ai:
+    openai:
+      # Placeholder keeps Spring AI's autoconfiguration from failing app startup when unset.
+      # Real LLM calls with this placeholder fail at request time and are caught by
+      # QueryUnderstandingService / RankingService's fallback paths (ADR-15, ADR-23) --
+      # the service stays up and returns vector-similarity results either way.
+      api-key: ${OPENAI_API_KEY:sk-not-configured}
+      chat:
+        options:
+          model: gpt-4o-mini
+          temperature: 0.2
+
+reco:
+  embed-service:
+    base-url: ${EMBED_SERVICE_URL:http://localhost:8000}
+  retrieval:
+    vector-top-n: 25
+    final-top-k: 8
+
+logging:
+  level:
+    com.example.reco: INFO

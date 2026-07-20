@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: myreco-postgres
+    environment:
+      POSTGRES_USER: reco
+      POSTGRES_PASSWORD: reco
+      POSTGRES_DB: reco
+    ports:
+      - "5434:5432"
+    volumes:
+      - myreco_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reco -d reco"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [reco-net]
+
+  embed-service:
+    build:
+      context: ./data-pipeline
+    container_name: myreco-embed-service
+    ports:
+      - "8001:8000"
+    healthcheck:
+      # No curl/wget in the slim Python image -- use urllib instead of adding a package.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [reco-net]
+
+  recommendation-service:
+    build:
+      context: ./recommendation-service
+    container_name: myreco-recommendation-service
+    ports:
+      - "8080:8080"
+    # List form, not map form: a bare "OPENAI_API_KEY" (no "=value") tells
+    # Compose to pass it through from the host only if set there, and to
+    # leave it genuinely UNSET in the container otherwise. The map-style
+    # `OPENAI_API_KEY: ${OPENAI_API_KEY:-}` looked equivalent but isn't --
+    # it always sets the variable (to an empty string when unset on the
+    # host), which defeats application.yml's `${OPENAI_API_KEY:sk-not-configured}`
+    # fallback: Spring's `:default` only triggers when a property is
+    # entirely absent, not when it's present-but-blank.
+    environment:
+      # Inside the compose network, services reach each other by service name,
+      # not localhost -- these override application.yml's local-dev defaults.
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/reco
+      - SPRING_DATASOURCE_USERNAME=reco
+      - SPRING_DATASOURCE_PASSWORD=reco
+      - EMBED_SERVICE_URL=http://embed-service:8000
+      # Never hardcoded here -- passed through from your shell or a local,
+      # git-ignored .env file if you've set it there. Falls back to the safe
+      # placeholder in application.yml (degraded/vector-only mode) if unset.
+      - OPENAI_API_KEY
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embed-service:
+        condition: service_healthy
+    networks: [reco-net]
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: myreco-frontend
+    ports:
+      - "5500:80"
+    depends_on:
+      - recommendation-service
+    networks: [reco-net]
+
+networks:
+  reco-net:
+
+volumes:
+  myreco_pg_data:
